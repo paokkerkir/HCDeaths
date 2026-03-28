@@ -1,5 +1,4 @@
-# ARCHIVE of HCDeaths by GryllsAddons for TurtleWoW. The original repository was deleted.
-I am not the original Author and am not keeping it updated.
+HCDeaths for TurtleWoW.
 
 # HCDeaths
 
