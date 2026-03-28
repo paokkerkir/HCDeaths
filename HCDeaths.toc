@@ -1,8 +1,8 @@
 ## Interface: 11200
 ## Title: HCDeaths
-## Author: Grylls
+## Author: Grylls - edits by belthazor
 ## Notes: Displays and logs hardcore deaths
-## Version: GIT
+## Version: 1.1
 ## SavedVariables: HCDeaths_Settings, HCDeaths, HCDeaths_LastWords
 
 HCDeaths.lua
