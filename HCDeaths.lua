@@ -201,14 +201,19 @@ queryTimer:SetScript("OnUpdate", function()
 		this:Hide()
 	elseif GetTime() >= this.time + this.timeout then
 		if not result then
-			HCDeath:RemoveDeath(queriedPlayer)
-			HCDeath:RemovePlayerDeath(queriedPlayer)
-			HCDeath:updateLog(true)
+			-- /who failed (character likely deleted on HC death)
+			-- mark as info so the toast and log still show with available data
+			for _, hcdeath in pairs(deaths) do
+				if hcdeath.playerName == queriedPlayer and not hcdeath.info then
+					hcdeath.info = true
+					break
+				end
+			end
 			-- reset
-			this.time = nil		
+			this.time = nil
 			logged = nil
 			queried = nil
-			-- HCDeath:print("DEBUG: query timed out")
+			HCDeath:Toast()
 			this:Hide()
 		end
 	end
@@ -395,26 +400,28 @@ end
 function HCDeath:sound(deathType, playerRace, playerLevel)
 	if (deathType == "PVP" or deathType == "PVE") then
 		if HCDeaths_Settings.deathsound then
-			if HCDeaths_Settings.roar then
+			if HCDeaths_Settings.roar and playerRace and deathsound[playerRace] then
 				local num = math.random(1, 2)
 				PlaySoundFile(deathsound[playerRace][num])
 			else
 				PlaySoundFile("Sound/interface/RaidWarning.wav")
 			end
 		end
-	else		
+	else
 		if HCDeaths_Settings.levelsound then
 			if deathType == "LVL" then
 				if playerLevel == 60 then
 					PlaySoundFile("Sound\\Doodad\\G_FireworkLauncher02Custom0.wav")
 				end
 			elseif deathType == "INFSTART" then
-				PlaySoundFile("\\Sound\\Creature\\Razuvious\\RAZ_NAXX_AGGRO01.wav")				
+				PlaySoundFile("\\Sound\\Creature\\Razuvious\\RAZ_NAXX_AGGRO01.wav")
 			end
 
-			local num = math.random(1, 4)
-			PlaySoundFile(progress[playerRace][num])
-		end		
+			if playerRace and progress[playerRace] then
+				local num = math.random(1, 4)
+				PlaySoundFile(progress[playerRace][num])
+			end
+		end
 	end
 end
 
@@ -433,16 +440,26 @@ function HCDeath:Toast()
 					if (hcdeath.deathType == "LVL") and (not HCDeaths_Settings.progress) then return end					
 
 					local level = tonumber(hcdeath.playerLevel)
-					local class = RAID_CLASS_COLORS[strupper(hcdeath.playerClass)] or { r = 1, g = .5, b = 0 }
+					local class = hcdeath.playerClass and RAID_CLASS_COLORS[strupper(hcdeath.playerClass)] or { r = 1, g = .5, b = 0 }
 					local hex = HCDeath:rgbToHex(class.r, class.g, class.b)
 
-					HCDeath.class:SetTexture(media.."Ring\\"..hcdeath.playerClass)
-					HCDeath.race:SetTexture(media.."Ring\\"..hcdeath.playerRace)
+					if hcdeath.playerClass then
+						HCDeath.class:SetTexture(media.."Ring\\"..hcdeath.playerClass)
+						HCDeath.class:Show()
+					else
+						HCDeath.class:Hide()
+					end
+					if hcdeath.playerRace then
+						HCDeath.race:SetTexture(media.."Ring\\"..hcdeath.playerRace)
+						HCDeath.race:Show()
+					else
+						HCDeath.race:Hide()
+					end
 
 					HCDeath.level:SetText(hcdeath.playerLevel)
 					HCDeath.name:SetText("|cff"..hex..hcdeath.playerName)
 
-					if hcdeath.playerGuild ~= "nil" then
+					if hcdeath.playerGuild and hcdeath.playerGuild ~= "nil" then
 						HCDeath.guild:SetText("<"..hcdeath.playerGuild..">")
 					else
 						HCDeath.guild:SetText("")
@@ -463,7 +480,7 @@ function HCDeath:Toast()
 					else
 						-- local locHex = HCDeath:locHex(hcdeath.zone)		
 						-- HCDeath.location:SetText("Has died in ".."|cff"..locHex..hcdeath.zone)
-						HCDeath.location:SetText("Has died in "..hcdeath.zone)
+						HCDeath.location:SetText("Has died in "..(hcdeath.zone or "an unknown location"))
 						HCDeath.name:SetText("|cff"..hex..hcdeath.playerName)
 						if hcdeath.deathType == "PVE" then
 							if hcdeath.killerLevel then
@@ -486,7 +503,7 @@ function HCDeath:Toast()
 						-- HCDeath.quote:SetText("May this sacrifice not be forgotten!")
 					end				
 					
-					HCDeath:sound(hcdeath.deathType, hcdeath.playerRace, level)					
+					HCDeath:sound(hcdeath.deathType, hcdeath.playerRace, level)
 					HCDeath:color(level)
 					HCDeath:showToast()
 					if (hcdeath.deathType == "PVP" or hcdeath.deathType == "PVE") then
@@ -576,8 +593,15 @@ end
 function HCDeath:QueryPlayer()
 	for _, hcdeath in pairs(deaths) do
 		if not hcdeath.playerClass then
-			hcdeath.playerGuild, hcdeath.playerLevel, hcdeath.playerRace, hcdeath.playerClass, hcdeath.zone = HCDeath:GetWhoInfo(hcdeath.playerName)
-			if (hcdeath.deathType ~= "PVP") and hcdeath.playerClass then
+			local whoGuild, whoLevel, whoRace, whoClass, whoZone = HCDeath:GetWhoInfo(hcdeath.playerName)
+			if whoClass then
+				hcdeath.playerGuild = whoGuild
+				hcdeath.playerLevel = whoLevel
+				hcdeath.playerRace = whoRace
+				hcdeath.playerClass = whoClass
+				hcdeath.zone = whoZone or hcdeath.zone
+			end
+			if (hcdeath.deathType ~= "PVP") then
 				hcdeath.info = true
 			elseif (hcdeath.deathType == "PVP") and (not hcdeath.killerClass) then
 				HCDeath:whoPlayer(hcdeath.killerName, _, hcdeath.zone)
@@ -688,9 +712,9 @@ end
 local testmsg
 function HCDeath:test(dtype, player, plevel, killer)	
 	if dtype == "pve" then
-		testmsg = "A tragedy has occurred. Hardcore character "..player.." died of natural causes at level "..plevel..". May this sacrifice not be forgotten."
+		testmsg = "A tragedy has occurred. Hardcore character "..player.." (level "..plevel..") died of natural causes in The Barrens. May this sacrifice not be forgotten."
 	elseif dtype == "pvp" then
-		testmsg = "A tragedy has occurred. Hardcore character "..player.." has fallen in PvP to "..killer.." at level "..plevel.."."
+		testmsg = "A tragedy has occurred. Hardcore character "..player.." (level "..plevel..") has fallen in PvP to "..killer.." in The Barrens. May this sacrifice not be forgotten."
 	end
 	SendChatMessage(".server info")
 end
@@ -714,9 +738,9 @@ function ChatFrame_OnEvent(event)
 		-- PVP = ??
 
 		-- Examples of Turtle WoW Hardcore messages:
-		-- PVE = "A tragedy has occurred. Hardcore character PLAYERNAME has fallen to MOBNAME1 MOBNAME2 (level KILLERLEVEL) at level PLAYERLEVEL..."
-		-- NAT = "A tragedy has occurred. Hardcore character PLAYERNAME died of natural causes at level PLAYERLEVEL..."
-		-- PvP = "A tragedy has occurred. Hardcore character PLAYERNAME has fallen in PvP to KILLERNAME at level PLAYERLEVEL..."
+		-- PVE = "A tragedy has occurred. Hardcore character PLAYERNAME (level PLAYERLEVEL) has fallen to MOBNAME (level KILLERLEVEL) in ZONE. May this sacrifice not be forgotten."
+		-- NAT = "A tragedy has occurred. Hardcore character PLAYERNAME (level PLAYERLEVEL) died of natural causes in ZONE. May this sacrifice not be forgotten."
+		-- PvP = "A tragedy has occurred. Hardcore character PLAYERNAME (level PLAYERLEVEL) has fallen in PvP to KILLERNAME in ZONE. May this sacrifice not be forgotten."
 
 		-- Example of /who result messages:
 		-- [PLAYERNAME]: Level PLAYERLEVEL PLAYERRACE PLAYERCLASS <PLAYERGUILD> - AREA
@@ -782,10 +806,11 @@ function ChatFrame_OnEvent(event)
 			-- 	hcType = "INF"
 			-- end			
 
-			local pvp, natural, playerLevel, deathType, killerName, killerLevel, killerClass
+			local pvp, natural, playerLevel, deathType, killerName, killerLevel, killerClass, deathZone
 			_, _, pvp = string.find(arg1,"(PvP)")
 			_, _, natural = string.find(arg1,"(natural causes)")
-			_, _, playerLevel = string.find(arg1,"at level (%d+)")
+			_, _, playerLevel = string.find(arg1,"character %a+ %(level (%d+)%)")
+			_, _, deathZone = string.find(arg1," in ([^%.]+)%. May")
 
 			if pvp then 
 				deathType = "PVP"
@@ -797,7 +822,7 @@ function ChatFrame_OnEvent(event)
 					killerClass = "ENV"
 				else
 					_, _, killerName = string.find(arg1,"to%s+(.-)%s*%(")
-					_, _, killerLevel = string.find(arg1,"%(level%s*(.-)%).-at")
+					_, _, killerLevel = string.find(arg1,"fallen to .+%(level%s*(%d+)%)")
 					killerClass = "NPC"
 				end
 			end
@@ -807,7 +832,7 @@ function ChatFrame_OnEvent(event)
 				stime = date("!%H:%M:%S"),
 				deathType = deathType,
 				hcType = hcType,
-				zone = nil,
+				zone = deathZone,
 				playerName = hcdeath,
 				playerLevel = playerLevel,
 				playerClass = nil,
@@ -1205,17 +1230,25 @@ function HCDeath:updateLog()
 			level:SetText(hcdeath.playerLevel)
 
 			-- name
-			local pclass = RAID_CLASS_COLORS[strupper(hcdeath.playerClass)] or { r = .5, g = .5, b = .5 }
+			local pclass = hcdeath.playerClass and RAID_CLASS_COLORS[strupper(hcdeath.playerClass)] or { r = .5, g = .5, b = .5 }
 			local classhex = HCDeath:rgbToHex(pclass.r, pclass.g, pclass.b)
 			name:SetText("|cff"..classhex..hcdeath.playerName)
 
 			-- race
-			race:SetTexture(media.."Log\\"..hcdeath.playerRace)
-			race:Show()
+			if hcdeath.playerRace then
+				race:SetTexture(media.."Log\\"..hcdeath.playerRace)
+				race:Show()
+			else
+				race:Hide()
+			end
 
 			-- class
-			class:SetTexture(media.."Log\\"..hcdeath.playerClass)
-			class:Show()
+			if hcdeath.playerClass then
+				class:SetTexture(media.."Log\\"..hcdeath.playerClass)
+				class:Show()
+			else
+				class:Hide()
+			end
 
 			-- guild
 			-- if hcdeath.playerGuild ~= "nil" then
@@ -1251,14 +1284,15 @@ function HCDeath:updateLog()
 				local guildhex = HCDeath:rgbToHex(116/255, 113/255, 255/255)
 				-- player			
 				local pname = "|cff"..classhex..hcdeath.playerName.."|r"
-				local pclass = "|cff"..classhex..hcdeath.playerClass.."|r"
+				local pclass = hcdeath.playerClass and ("|cff"..classhex..hcdeath.playerClass.."|r") or "Unknown"
 				local pguild = ""
 				if hcdeath.playerGuild ~= "nil" then
 					pguild = " |cff"..guildhex.."<"..hcdeath.playerGuild..">|r"
 				end
 
-				local locHex = HCDeath:locHex(hcdeath.zone)	
-				local zone = "|cff"..locHex..hcdeath.zone.."|r"
+				local zoneText = hcdeath.zone or "Unknown"
+				local locHex = HCDeath:locHex(zoneText)
+				local zone = "|cff"..locHex..zoneText.."|r"
 
 				local lastwords = ""
 				if hcdeath.lastWords ~= "nil" then
@@ -1292,7 +1326,8 @@ function HCDeath:updateLog()
 				end
 				GameTooltip:ClearLines()
 				GameTooltip:AddLine(death.type, death.r, death.g, death.b)
-				GameTooltip:AddLine(pname..pguild..NORMAL_FONT_COLOR_CODE.." the level "..hcdeath.playerLevel.." "..hcdeath.playerRace.." |r"..pclass..NORMAL_FONT_COLOR_CODE.." died in |r"..zone..NORMAL_FONT_COLOR_CODE.." to |r"..killer..NORMAL_FONT_COLOR_CODE..". |r"..lastwords,_,_,_,true)
+				local playerRaceText = hcdeath.playerRace or "Unknown"
+				GameTooltip:AddLine(pname..pguild..NORMAL_FONT_COLOR_CODE.." the level "..hcdeath.playerLevel.." "..playerRaceText.." |r"..pclass..NORMAL_FONT_COLOR_CODE.." died in |r"..zone..NORMAL_FONT_COLOR_CODE.." to |r"..killer..NORMAL_FONT_COLOR_CODE..". |r"..lastwords,_,_,_,true)
 				-- GameTooltip:AddLine("Date: "..hcdeath.sdate.." Time: "..hcdeath.stime)
 				GameTooltip:Show()
 			end)
