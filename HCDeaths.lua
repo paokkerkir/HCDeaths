@@ -201,19 +201,13 @@ queryTimer:SetScript("OnUpdate", function()
 		this:Hide()
 	elseif GetTime() >= this.time + this.timeout then
 		if not result then
-			-- /who failed (character likely deleted on HC death)
-			-- mark as info so the toast and log still show with available data
-			for _, hcdeath in pairs(deaths) do
-				if hcdeath.playerName == queriedPlayer and not hcdeath.info then
-					hcdeath.info = true
-					break
-				end
-			end
+			HCDeath:RemoveDeath(queriedPlayer)
+			HCDeath:RemovePlayerDeath(queriedPlayer)
+			HCDeath:updateLog(true)
 			-- reset
 			this.time = nil
 			logged = nil
 			queried = nil
-			HCDeath:Toast()
 			this:Hide()
 		end
 	end
@@ -489,12 +483,13 @@ function HCDeath:Toast()
 								HCDeath.death:SetText("to "..hcdeath.killerName)
 							end
 						elseif hcdeath.deathType == "PVP" then
-							local class = RAID_CLASS_COLORS[strupper(hcdeath.killerClass)] or { r = 1, g = .5, b = 0 }
+							local class = hcdeath.killerClass and RAID_CLASS_COLORS[strupper(hcdeath.killerClass)] or { r = 1, g = .5, b = 0 }
 							local hex = HCDeath:rgbToHex(class.r, class.g, class.b)
-							HCDeath.death:SetText("to |cff"..hex..hcdeath.killerName.."|r level "..hcdeath.killerLevel)
+							local kLevel = hcdeath.killerLevel or "?"
+							HCDeath.death:SetText("to |cff"..hex..hcdeath.killerName.."|r level "..kLevel)
 						end
 
-						if hcdeath.lastWords ~= "nil" then
+						if hcdeath.lastWords and hcdeath.lastWords ~= "nil" then
 							HCDeath.lastwords:SetText('"'..hcdeath.lastWords..'"')
 						else
 							HCDeath.lastwords:SetText("")
@@ -601,7 +596,7 @@ function HCDeath:QueryPlayer()
 				hcdeath.playerClass = whoClass
 				hcdeath.zone = whoZone or hcdeath.zone
 			end
-			if (hcdeath.deathType ~= "PVP") then
+			if (hcdeath.deathType ~= "PVP") and hcdeath.playerClass then
 				hcdeath.info = true
 			elseif (hcdeath.deathType == "PVP") and (not hcdeath.killerClass) then
 				HCDeath:whoPlayer(hcdeath.killerName, _, hcdeath.zone)
@@ -1286,7 +1281,7 @@ function HCDeath:updateLog()
 				local pname = "|cff"..classhex..hcdeath.playerName.."|r"
 				local pclass = hcdeath.playerClass and ("|cff"..classhex..hcdeath.playerClass.."|r") or "Unknown"
 				local pguild = ""
-				if hcdeath.playerGuild ~= "nil" then
+				if hcdeath.playerGuild and hcdeath.playerGuild ~= "nil" then
 					pguild = " |cff"..guildhex.."<"..hcdeath.playerGuild..">|r"
 				end
 
@@ -1295,25 +1290,27 @@ function HCDeath:updateLog()
 				local zone = "|cff"..locHex..zoneText.."|r"
 
 				local lastwords = ""
-				if hcdeath.lastWords ~= "nil" then
+				if hcdeath.lastWords and hcdeath.lastWords ~= "nil" then
 					lastwords = NORMAL_FONT_COLOR_CODE..'Their last words were '..GRAY_FONT_COLOR_CODE..'"'..hcdeath.lastWords..'"'..NORMAL_FONT_COLOR_CODE..'.|r'
 				end
 
 				-- killer
-				local kclass = RAID_CLASS_COLORS[strupper(hcdeath.killerClass)] or { r = 1, g = .5, b = 0 }
-				local classhex = HCDeath:rgbToHex(kclass.r, kclass.g, kclass.b)				
-				local kname = "|cff"..classhex..hcdeath.killerName.."|r"
-				kclass = "|cff"..classhex..hcdeath.killerClass.."|r"
+				local kclass = hcdeath.killerClass and RAID_CLASS_COLORS[strupper(hcdeath.killerClass)] or { r = 1, g = .5, b = 0 }
+				local classhex = HCDeath:rgbToHex(kclass.r, kclass.g, kclass.b)
+				local kname = "|cff"..classhex..(hcdeath.killerName or "Unknown").."|r"
+				kclass = "|cff"..classhex..(hcdeath.killerClass or "Unknown").."|r"
 				local kguild = ""
-				if hcdeath.killerGuild ~= "nil" then
+				if hcdeath.killerGuild and hcdeath.killerGuild ~= "nil" then
 					kguild = "|cff"..guildhex.."<"..hcdeath.killerGuild..">|r"
 				end
-				
+
 				local killer
 				if hcdeath.deathType == "PVP" then
-					killer = kname.." "..kguild..NORMAL_FONT_COLOR_CODE.." the level "..hcdeath.killerLevel.." "..hcdeath.killerRace.." |r"..kclass
+					local kRace = hcdeath.killerRace or "Unknown"
+					local kLevel = hcdeath.killerLevel or "?"
+					killer = kname.." "..kguild..NORMAL_FONT_COLOR_CODE.." the level "..kLevel.." "..kRace.." |r"..kclass
 				else
-					if hcdeath.killerLevel ~= "nil" then
+					if hcdeath.killerLevel and hcdeath.killerLevel ~= "nil" then
 						killer = kname..NORMAL_FONT_COLOR_CODE.." level "..hcdeath.killerLevel.."|r"
 					else
 						killer = kname
